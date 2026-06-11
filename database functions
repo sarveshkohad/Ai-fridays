@@ -1,0 +1,163 @@
+import streamlit as st
+import pandas as pd
+import sqlite3
+import os
+
+#DB_FILE = "medicine.db"
+#TABLE_NAME = "medicine"
+
+# ---------------- DATABASE FUNCTIONS ----------------
+
+#def create_db_from_csv():
+    #df = pd.read_csv("C:\Users\GenAIMUMOLYAUSR229\Desktop\Project 4\medicine_inventory.db")
+ #   DB_FILE = r"C:\Users\GenAIMUMOLYAUSR229\Desktop\Project 4\medicine_inventory.db"
+  #  TABLE_NAME = "medicines"
+import pandas as pd
+import sqlite3
+
+def create_db_from_csv(csv_file):
+    DB_FILE = r"C:\Users\GenAIMUMOLYAUSR229\Desktop\Project 4\medicine_inventory.db"
+    TABLE_NAME = "medicines"
+    
+    # Read CSV into pandas DataFrame
+    df = pd.read_csv(csv_file)
+    
+    # Connect to SQLite database (it will create if it doesn't exist)
+    conn = sqlite3.connect(DB_FILE)
+    
+    # Write DataFrame to SQL table (replace table if it exists)
+    df.to_sql(TABLE_NAME, conn, if_exists='replace', index=False)
+    
+    # Close connection
+    conn.close()
+    
+    return True
+
+
+    # Ensure correct column names
+    expected_cols = {"Medicine_ID","Medicine_Name", "Strength", "Use_Case", "Alternative", "Stock", "Dose_Instructions"}
+    if not expected_cols.issubset(set(df.columns)):
+        st.error(f"CSV must contain these columns: {expected_cols}")
+        return False
+
+    conn = sqlite3.connect(DB_FILE)
+    df.to_sql(TABLE_NAME, conn, if_exists="replace", index=False)
+    conn.close()
+    return True
+
+
+def query_db(query, params=()):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(query, params)
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+# ---------------- AGENT FUNCTIONS ----------------
+
+def explain_medicine(name):
+    data = query_db(
+        f"""SELECT medicine_name, strength, use, dose_instructions
+            FROM {TABLE_NAME}
+            WHERE LOWER(medicine_name)=LOWER(?)""",
+        (name,)
+    )
+    if not data:
+        return "🔍 Medicine not found in the dataset."
+
+    return f"""
+**Medicine:** {data[0]}  
+**Strength:** {data[1]}  
+**Used for:** {data[2]}  
+**Dose:** {data[3]}  
+"""
+
+
+def check_stock(name):
+    data = query_db(
+        f"""SELECT availability, alternative FROM {TABLE_NAME}
+            WHERE LOWER(medicine_name)=LOWER(?)""",
+        (name,)
+    )
+    if not data:
+        return "🔍 Medicine not found in the dataset."
+
+    availability, alternatives = data
+
+    if availability == 1:
+        return "✅ This medicine is currently in stock."
+
+    # Friendly guidance if out of stock
+    guidance = "⚠️ This medicine is temporarily unavailable.\n"
+    if alternatives:
+        alts_list = alternatives.split("|")
+        guidance += "💡 You may consider these alternatives: " + ", ".join(alts_list) + ".\n"
+    guidance += "🛒 Please check with your pharmacist or doctor for safe usage and timing."
+    return guidance
+
+
+def suggest_alternatives(name):
+    data = query_db(
+        f"""SELECT alternative FROM {TABLE_NAME}
+            WHERE LOWER(medicine_name)=LOWER(?)""",
+        (name,)
+    )
+    if not data or not data[0]:
+        return "⚠️ No alternatives listed. Please consult your pharmacist."
+
+    alts = data[0].split("|")
+    return "🔁 Suggested alternatives: " + ", ".join(alts)
+
+
+def faq_answer(name):
+    data = query_db(
+        f"""SELECT use, dose_instructions FROM {TABLE_NAME}
+            WHERE LOWER(medicine_name)=LOWER(?)""",
+        (name,)
+    )
+    if not data:
+        return "🔍 Medicine not found in the dataset."
+
+    return f"""
+**Frequently Asked Info**  
+• **Used for:** {data[0]}  
+• **How to take:** {data[1]}  
+⚠️ Always follow the doctor's instructions for dosage and duration.
+"""
+
+# ---------------- STREAMLIT UI ----------------
+
+st.set_page_config(page_title="Medical Shop AI Assistant", layout="centered")
+
+st.title("🏥 Medical Shop AI Assistant")
+st.write("Dataset-based guidance. Safe & friendly for pharmacy use. No diagnosis.")
+
+# Upload CSV
+uploaded_file = st.file_uploader("📤 Upload Medicine CSV", type=["csv"])
+
+if uploaded_file:
+    if create_db_from_csv(uploaded_file):
+        st.success("✅ CSV uploaded and database created successfully!")
+
+        medicine_name = st.text_input("💊 Enter Medicine Name")
+
+        if medicine_name:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("📘 Explain Medicine"):
+                    st.markdown(explain_medicine(medicine_name))
+
+                if st.button("📦 Check Stock"):
+                    st.info(check_stock(medicine_name))
+
+            with col2:
+                if st.button("🔁 Suggest Alternatives"):
+                    st.warning(suggest_alternatives(medicine_name))
+
+                if st.button("❓ FAQ"):
+                    st.markdown(faq_answer(medicine_name))
+
+else:
+    st.info("Please upload a CSV file to get started.")
