@@ -1,0 +1,88 @@
+import sqlite3
+import pandas as pd
+import streamlit as st
+from langchain_openai import ChatOpenAI
+from langchain_community.utilities import SQLDatabase
+from langchain_community.agent_toolkits import create_sql_agent
+from langchain_core.messages import SystemMessage
+import os
+import httpx
+client = httpx.Client(verify=False)
+
+# -------------------------
+# Step 1: Load CSV into SQLite
+# -------------------------
+CSV_FILE = "medicine_inventory.csv"
+DB_FILE = "medicine_inventory.db"
+
+def create_db_from_csv(csv_file, db_file):
+    df = pd.read_csv(csv_file)
+    conn = sqlite3.connect(db_file)
+    df.to_sql("medicines", conn, if_exists="replace", index=False)
+    conn.close()
+
+# create DB once
+create_db_from_csv(CSV_FILE, DB_FILE)
+
+# -------------------------
+# Step 2: Streamlit UI
+# -------------------------
+st.set_page_config(page_title="Medical Shop AI Agent", layout="centered")
+st.title("🧠 Medical Shop AI Agent")
+st.write("Ask questions about medicine stock and use cases. (No medical advice provided)")
+
+user_query = st.text_input("Ask a question:")
+
+# -------------------------
+# Step 3: LLM + SQL Agent
+# -------------------------
+# Use a system prompt to prevent medical advice generation
+system_prompt = SystemMessage(
+    content="""
+You are a helpful SQL assistant for a medical shop inventory.
+You ONLY generate SQL queries to retrieve data from the database.
+Do NOT give medical advice or diagnosis.
+Use the database fields only.
+"""
+)
+
+# Connect to SQLite
+db = SQLDatabase.from_uri(f"sqlite:///{DB_FILE}")
+
+llm = ChatOpenAI(
+    # set openai_api_base to the LiteLLM Proxy
+    base_url="https://genailab.tcs.in",
+    model="azure_ai/genailab-maas-DeepSeek-V3-0324",
+    # Provided Key is for this purposes only and should not be used for any unauthorized purposes
+    api_key="sk-PZl9LQwBYnQMJVI4uQPByg",
+    http_client=client
+)
+
+agent = create_sql_agent(
+    llm=llm,
+    db=db,
+    system_message=system_prompt,
+    verbose=False
+)
+
+# -------------------------
+# Step 4: Run Query and Show Answer
+# -------------------------
+if st.button("Ask"):
+    if user_query.strip() == "":
+        st.warning("Please type a question.")
+    else:
+        with st.spinner("Processing..."):
+            try:
+                # Run agent
+                result = agent.invoke(user_query)
+
+                # Extract answer
+                st.success("Here is your answer:")
+                st.write(result["output"])
+
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+\
+
