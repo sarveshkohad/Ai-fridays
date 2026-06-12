@@ -1,0 +1,53 @@
+
+
+
+Let me read the relevant skills before planning this out.Reading frontend design skillReading frontend design skillReading frontend design skillDoneNow let me give you the full architecture and thinking framework.Now let me build the full architecture diagram and planning guide for you.
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+VvisualizeVvisualize show_widgetNow here's how to think through the entire system — layer by layer — with the hackathon constraints in mind.
+
+How to think through this
+The key insight is that a deep research system is not just "ask LLM → get answer." It's a multi-step, self-correcting pipeline where agents plan, search, synthesize, and verify. That architecture naturally maps to every technology requirement you listed.
+
+The problem statement framing
+Before writing a line of code, nail down your problem statement as a research question type. Something like: "Given a complex business/technical problem, autonomously decompose it, gather evidence from multiple sources, reason across findings, and produce a structured report." This framing justifies every technology choice below.
+
+Layer-by-layer thinking
+LangGraph workflow is your backbone. Think of it as a state machine with nodes (agents) and edges (conditions). Your graph has these nodes: planner → router → [web_search | rag_retrieval | code_analysis] → synthesizer → critic. The critic node can loop back to the router if quality is low — that's your agentic loop. This single design earns you LangGraph + Agentic AI + workflow checkmarks in one shot.
+API workflow (FastAPI) sits between the UI and LangGraph. Every research job is a POST request that kicks off a LangGraph run, returns a job ID, and streams progress via SSE (Server-Sent Events) or WebSocket. The UI polls/subscribes to that stream. This gives you clean separation and makes the system demo-able — you can show the graph executing live.
+LLM workflow is where the model-switching happens. Different nodes use different models: the Planner uses the strongest model (GPT-4o or DeepSeek-V3) for reasoning, the web scraper summarizer uses a faster/cheaper model (GPT-3.5 or Phi-4), the code agent uses the coder model (Qwen-2.5-coder). The lab already has all these available.
+RAG plugs in as one of your agent tools. When the router decides a question needs internal knowledge, it calls the RAG agent: load documents → chunk → embed → store in Chroma → similarity search → inject context into the LLM prompt. This is your foundational AI enhancement, and the lab handbook has sample code for exactly this.
+MCP (Model Context Protocol) is your most impressive differentiator for the jury. Wire up 2-3 MCP tools: a file system tool (read/write research reports), a database tool (persist sessions), and ideally a search API tool. In LangGraph, these become tool nodes the router can call. This shows you understand the agent-tool paradigm at a production level.
+Database management ties it together. PostgreSQL stores research sessions and results. Chroma persists the vector index between runs (so RAG improves over time). Redis caches LLM responses for identical sub-queries (shows enterprise thinking). Every DB interaction happens through the FastAPI layer — never directly from the frontend.
+
+The LangGraph graph design (concrete)
+START
+  └─► planner_node        # LLM decomposes question into N sub-tasks
+        └─► router_node   # For each sub-task, picks: web | rag | code
+              ├─► web_search_node    # Tavily API → top 5 results → summarize
+              ├─► rag_node           # Chroma similarity search → inject context
+              └─► code_node         # Python exec → charts/stats
+        └─► synthesizer_node  # Merges all sub-task results into draft report
+              └─► critic_node   # Scores quality 1-10; if <7, loop back to router
+                    └─► END (final report output)
+This loop is what makes it "agentic" — it doesn't just run once, it iterates until the critic is satisfied.
+
+What to build on hackathon day (prioritized)
+Build in this order so you always have a demoable system:
+
+FastAPI skeleton + LangGraph graph with 3 nodes (planner, one agent, synthesizer) — working end-to-end in 1 hour
+Add RAG pipeline — 30 minutes (use the lab's sample code)
+Add web search tool + router logic — 30 minutes
+Streamlit UI with live streaming — 30 minutes
+Add critic/evaluator loop + MCP file tool — remaining time
+Polish: session history in DB, result download — if time permits
+
+
+What will impress the jury specifically
+Given the scoring criteria (creativity, working app, innovation, team participation), lead with the self-correcting agentic loop in your demo — show the critic node rejecting a low-quality answer and triggering a second research pass. That single moment demonstrates LangGraph, Agentic AI, and LLM workflow simultaneously and is visually compelling in a 5-minute demo.
+The MCP integration will stand out because very few teams at Round 1 will attempt it. Even wiring up one MCP file tool is enough to mention it by name.
+For the demo flow itself: frame your problem statement in 30 seconds, show the Planner breaking it down live, show the streaming progress (so the jury can see agents working), then reveal the final structured report. That's your 5 minutes.
